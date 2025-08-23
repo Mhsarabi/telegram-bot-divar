@@ -2,6 +2,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup,InlineKeyboardButton
 import os
 import logging
+from request_divar import get_products,get_avg_price_from_divar
 
 # set logger
 logger=telebot.logger
@@ -11,6 +12,8 @@ telebot.logger.setLevel(logging.INFO)
 API_TOKEN=os.environ.get("API_TOKEN")
 bot=telebot.TeleBot(API_TOKEN)
 
+user_status={}
+
 # command start
 @bot.message_handler(commands=['start'])
 def start_command(message):
@@ -19,9 +22,11 @@ def start_command(message):
     button_get_avg=InlineKeyboardButton("گرفتن حدود قیمت کالا",callback_data="avg")
     button_get_10_product=InlineKeyboardButton("نمونه کالا",callback_data="product")
     button_guide=InlineKeyboardButton("راهنما",callback_data="guide")
+    button_support=InlineKeyboardButton("پشتیبانی",callback_data="support")
+
 
     
-    markup.add(button_about_us,button_get_avg,button_get_10_product,button_guide)
+    markup.add(button_about_us,button_get_avg,button_get_10_product,button_guide,button_support)
 
     bot.reply_to(message,text=f"""سلام {message.from_user.username} عزیز\n به ربات دیوار خیلی خوش آمدی🔥
                  \nوظیفه من این هست که سرویس هایی از سایت دیوار را به شما ارائه دهم
@@ -46,22 +51,81 @@ def response_buttons(call):
     if call.data=="guide":
        bot.edit_message_text(chat_id=call.message.chat.id,message_id=call.message.id,
                               text="""خب ظاهرا به یکم راهنمایی نیاز داری برای کار کردن با من🧐
-                              \n/price:اگر این کامند را بزنی یعنی یک حدود قیمتی می خوای برای محصولی که الان تو ذهنت هست و خب من هم بعد از اینکه محصول وشهر مدنظرت را گفتی اون رنج قیمتش را بهت میگم
-                              \n/product:با زدن این کامند و در ادامه با دادن شهر و محصول مدنظر چند تا محصولی از آن چیزی که انتخاب کردی را برات می فرستم
+                              \n/price:اگر این کامند را بزنی یعنی یک حدود قیمتی می خوای برای محصولی که الان تو ذهنت هست و خب من هم بعد از اینکه محصول  مدنظرت را گفتی اون رنج قیمتش را بهت میگم
+                              \n/product:با زدن این کامند و در ادامه با دادن  محصول مدنظر چند تا محصول از آن چیزی که انتخاب کردی را برات می فرستم
                               \n/about:با زدن این کامند اطلاعاتی در خصوص من و توسعه دنده من دریافت می کنی🙈
                               \n/guide:اینم از کامند راهنما هستش،می خوای اینو بزنییی؟خب من که الان راهنماییت کردم😐
                               """) 
     
     if call.data=="product":
+        user_status[call.message.chat.id]="product"
         bot.edit_message_text(chat_id=call.message.chat.id,message_id=call.message.id,text="""خب پس چرا معطلی؟!😭
                               \nقصد خرید چه محصولی را داری؟
                               \nاسم آن را برام بنویس
                               """)
     
     if call.data=="avg":
+        user_status[call.message.chat.id]="avg"
         bot.edit_message_text(chat_id=call.message.chat.id,message_id=call.message.id,text="""راجب چه محصولی می خوای رنج قیمتیش را بدونی؟🤓
                               \nآن محصول را برام بنویس
                               """)
+        
+    if call.data=="support":
+        bot.edit_message_text(chat_id=call.message.chat.id,message_id=call.message.id,text="""اوه، اوه😬
+                              \n مثل اینکه کار ضروری برات پیش اومده که با پشتیبانم کار داری
+                              \nاین ID پشتیبانم در تلگرام هستش
+                              \n@sb_mohsen""")
+
+# get avg price of product
+@bot.message_handler(commands=['avg'])   
+def get_average(message):
+    user_status[message.chat.id]="avg"
+    bot.send_message(chat_id=message.chat.id,text="""راجب چه محصولی می خوای رنج قیمتیش را بدونی؟🤓
+                              \nآن محصول را برام بنویس
+                              """)     
+
+# get latest products
+@bot.message_handler(commands=['product'])   
+def get_average(message):
+    user_status[message.chat.id]="product"
+    bot.send_message(chat_id=message.chat.id,text="""خب پس چرا معطلی؟!😭
+                              \nقصد خرید چه محصولی را داری؟
+                              \nاسم آن را برام بنویس
+                              """)     
+    
+
+# structure of getting latest products and avg
+@bot.message_handler(func= lambda message:True)
+def get_product_info(message):
+    chat_id=message.chat.id
+    query = message.text.strip()
+
+    state=user_status[chat_id]
+    if state=="product":
+        bot.reply_to(message,f"🔎 چند لحظه صبر کن\n  دارم دنبال {query} در سایت دیوار می گردم...")
+        results = get_products(query)
+        if results:
+            response = "\n\n".join(results)
+        else:
+            response = "❌ چیزی پیدا نشد"
+
+        bot.send_message(message.chat.id, response)
+    
+        del user_status[chat_id]
+    
+    elif state=="avg":
+        bot.reply_to(message, f"📊چند لحظه صبر کن\n دارم حدود قیمت {query} درمیارم...")
+        avg_price = get_avg_price_from_divar(query)
+        if avg_price:
+            response = f"💰 ببین حدود قیمت {query}، {avg_price:,} تومان هستش"
+        else:
+            response = "❌ قیمتی پیدا نشد"
+        bot.send_message(chat_id, response)
+
+        del user_status[chat_id]
+
+    else:
+        bot.send_message(chat_id, "عزیزم ما را گیج کردی😅\n لطفا معلوم کن که میانگین را می خوای یا آخرین محصولات را")
 
 
 bot.infinity_polling()
